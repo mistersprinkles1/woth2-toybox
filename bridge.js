@@ -32,26 +32,37 @@
   };
   // a file the core wrote (model.json, fow.png), as base64 ('' when missing)
   window.toyboxRead = (path, cb) => send({ op: 'read', path }, cb);
-  // the player picks their save; cb('{"ok":true,"path":...}' | '' when nothing was picked)
-  window.toyboxPickSave = (cb) => {
+  // Browsers only open a file picker straight from a real click on the page, and the app's own buttons are drawn
+  // inside the game engine - so a small page dialog with a real button asks for the file.
+  function pickFile(title, text, accept, done) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,sans-serif';
+    wrap.innerHTML = '<div style="background:#14110d;border:1px solid #6b5a3c;border-radius:12px;padding:22px 24px;max-width:440px;width:calc(100% - 48px);color:#efe6d2;box-shadow:0 10px 40px #000">' +
+      '<div style="font-weight:700;font-size:18px;margin-bottom:8px">' + title + '</div>' +
+      '<div style="font-size:14px;line-height:1.45;color:#b9ad95;margin-bottom:18px">' + text + '</div>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+      '<button data-k="cancel" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer">Cancel</button>' +
+      '<button data-k="pick" style="background:#dcc79a;color:#16120c;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer">Choose file…</button></div></div>';
     const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.nrgs,.bak';
-    input.onchange = async () => {
-      const f = input.files && input.files[0];
+    input.type = 'file'; input.accept = accept; input.style.display = 'none';
+    wrap.appendChild(input); document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    wrap.querySelector('[data-k=cancel]').onclick = () => { close(); done(null); };
+    wrap.querySelector('[data-k=pick]').onclick = () => input.click();          // a real click: the browser allows the picker
+    input.onchange = () => { const f = input.files && input.files[0]; close(); done(f || null); };
+  }
+  // the player picks their save; cb('{"ok":true,"path":...}' | '' when nothing was picked)
+  window.toyboxPickSave = (cb) => pickFile('Import your save',
+    'Pick <b>SaveData.nrgs</b>. On Windows it is in %LOCALAPPDATA%\\WOTH2\\Saved\\SaveGames\\Account_…<br>It stays in this browser. The first time, reading it downloads about 36 MB.',
+    '.nrgs,.bak', async (f) => {
       if (!f) { cb(''); return; }
       const buf = await f.arrayBuffer();
       send({ op: 'save', bytes: buf }, cb, [buf]);
-    };
-    input.click();
-  };
+    });
   window.toyboxForgetSave = (cb) => send({ op: 'forget-save' }, cb);
   // a text file the player picks (Toybox data / notes import); cb('') when nothing was picked
-  window.toyboxPickText = (cb) => {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.json,application/json';
-    input.onchange = async () => { const f = input.files && input.files[0]; cb(f ? await f.text() : ''); };
-    input.click();
-  };
+  window.toyboxPickText = (cb) => pickFile('Import your Toybox data', 'Pick a file you exported from the Toybox (.json). It is added to what you have here.',
+    '.json,application/json', async (f) => cb(f ? await f.text() : ''));
   window.toyboxBase = () => document.baseURI;
   // tests: hand the core a save directly (ArrayBuffer)
   window.toyboxPutSave = (buf, cb) => send({ op: 'save', bytes: buf }, cb || (() => {}), [buf]);
