@@ -21,8 +21,9 @@
   // a core command: argv / env as JSON text, cb(output text, like the core prints it)
   window.toyboxRun = (argvJson, envJson, cb) => {
     const argv = JSON.parse(argvJson);
-    if (argv.includes('--save')) return send({ op: 'run', argv: argvJson, env: envJson }, cb);   // the player's save: Python
     const done = (p) => p.then((t) => cb(t.trim())).catch((e) => cb(JSON.stringify({ error: String(e.message || e) })));
+    if (argv[0] === 'encyclopedia') return done(get('data/encyclopedia.json'));   // the same for everyone, save or not
+    if (argv.includes('--save')) return send({ op: 'run', argv: argvJson, env: envJson }, cb);   // the player's save: Python
     switch (argv[0]) {
       case 'state': return done(get('data/state.json'));
       case 'encyclopedia': return done(get('data/encyclopedia.json'));
