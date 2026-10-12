@@ -53,7 +53,8 @@
   }
   // the player picks their save; cb('{"ok":true,"path":...}' | '' when nothing was picked)
   window.toyboxPickSave = (cb) => pickFile('Import your save',
-    'Pick <b>SaveData.nrgs</b>. On Windows it is in %LOCALAPPDATA%\\WOTH2\\Saved\\SaveGames\\Account_…<br>It stays in this browser. The first time, reading it downloads about 36 MB.',
+    'Pick <b>SaveData.nrgs</b>. On Windows it is in %LOCALAPPDATA%\\WOTH2\\Saved\\SaveGames\\Account_…<br>It stays in this browser. The first time, reading it downloads about 36 MB.' +
+    (matchMedia('(pointer: coarse)').matches ? '<br><br><b>On a phone or tablet this can run out of memory and close the page.</b> A PC browser works best.' : ''),
     '.nrgs,.bak', async (f) => {
       if (!f) { cb(''); return; }
       const buf = await f.arrayBuffer();
