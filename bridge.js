@@ -26,6 +26,7 @@
     switch (argv[0]) {
       case 'state': return done(get('data/state.json'));
       case 'encyclopedia': return done(get('data/encyclopedia.json'));
+      case 'stats': return done(get('data/stats.json'));            // no save: the challenge / mission list to tick off
       case 'prepare': return cb(JSON.stringify({ dir: '/mappack/' + argv[1], icons: '/mappack/icons', missing: [], warnings: [] }));
       default: return cb(JSON.stringify({ error: 'Not in the web app.' }));
     }
