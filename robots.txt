@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://woth2toybox.com/sitemap.xml
