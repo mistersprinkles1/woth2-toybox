@@ -55,7 +55,10 @@ async function boot() {
   FS.writeFile('/core/mappack/schedules.json', await fetchBytes('mappack/schedules.json'));
   FS.mkdirTree('/saves');
   const kept = await idbGet('save');
-  if (kept) FS.writeFile('/saves/SaveData.nrgs', kept);
+  if (kept) {
+    FS.writeFile('/saves/SaveData.nrgs', kept);
+    const t = await idbGet('save_mtime'); if (t) FS.utime('/saves/SaveData.nrgs', t, t);   // the game's save time, not now
+  }
   py.registerJsModule('toybox_host', {
     ooz(src, dstLen) {
       const buf = src.getBuffer ? src.getBuffer('u8') : null;
@@ -90,11 +93,13 @@ self.onmessage = async ({ data }) => {
     if (op === 'save') {                               // the player's save: kept here and in this browser
       const u8 = new Uint8Array(data.bytes);
       py.FS.writeFile('/saves/SaveData.nrgs', u8); await idbPut('save', u8);
+      if (data.mtime) py.FS.utime('/saves/SaveData.nrgs', data.mtime, data.mtime);     // file date = when the game saved it
+      await idbPut('save_mtime', data.mtime || 0);
       self.postMessage({ id, out: JSON.stringify({ ok: true, path: '/saves/SaveData.nrgs' }) }); return;
     }
     if (op === 'forget-save') {
       try { py.FS.unlink('/saves/SaveData.nrgs'); } catch { /* none */ }
-      await idbPut('save', null); self.postMessage({ id, out: '{"ok": true}' }); return;
+      await idbPut('save', null); await idbPut('save_mtime', 0); self.postMessage({ id, out: '{"ok": true}' }); return;
     }
     if (op === 'read') {                               // a file the core wrote (model.json, fow.png): base64
       let out = '';

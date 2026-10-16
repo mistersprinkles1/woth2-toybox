@@ -71,7 +71,7 @@
   const keptHandle = () => hdb('readonly', (st) => st.get('save')).catch(() => null);
   async function sendFile(f, cb) {
     const buf = await f.arrayBuffer();
-    send({ op: 'save', bytes: buf }, cb, [buf]);
+    send({ op: 'save', bytes: buf, mtime: f.lastModified || 0 }, cb, [buf]);   // the file's own date = when the game saved it
   }
   function askOnce(title, text, button, go) {        // a real click on the page, which the browser wants before it asks
     const wrap = document.createElement('div');
