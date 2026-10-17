@@ -2,6 +2,11 @@
 // model, the encyclopedia) is the same for everyone: it was made once when the site was built (web/build_web.sh)
 // and is just fetched here. Only when the player imports their save is the Python core (worker.js) started.
 (function () {
+  // The game canvas takes every key, so the browser never saw F5 / Ctrl+R / Ctrl+Shift+R: reload here first.
+  window.addEventListener('keydown', (e) => {
+    const r = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'r' || e.key === 'R');
+    if (r || e.key === 'F5') { e.preventDefault(); e.stopImmediatePropagation(); location.reload(); }
+  }, true);
   const base = new URL('./', document.baseURI).href;
   const get = (p) => fetch(base + p).then((r) => (r.ok ? r.text() : Promise.reject(new Error(p + ' ' + r.status))));
   let worker = null, next = 1;
