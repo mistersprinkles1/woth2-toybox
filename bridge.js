@@ -107,20 +107,17 @@
   };
   // the player picks their save; cb('{"ok":true,"path":...}' | '' when nothing was picked)
   const saveText = () => 'Pick <b>SaveData.nrgs</b>. On Windows it is in %LOCALAPPDATA%\\WOTH2\\Saved\\SaveGames\\Account_…<br>' +
-    (canKeep ? 'After more hunting, REFRESH reads it again.' : 'It stays in this browser. After more hunting, import it again to see the new hunts.') +
+    'It stays in this browser. After more hunting, import it again to see the new hunts.' +
     ' The first time, reading it downloads about 36 MB.' +
     (matchMedia('(pointer: coarse)').matches ? '<br><br><b>On a phone or tablet this can run out of memory and close the page.</b> A PC browser works best.' : '');
-  if (canKeep) {
-    window.toyboxPickSave = (cb) => askOnce('Import your save', saveText(), 'Choose file…', async (yes) => {
-      if (!yes) return cb('');
-      let h;
-      try { [h] = await window.showOpenFilePicker({ types: [{ description: 'Way of the Hunter 2 save', accept: { 'application/octet-stream': ['.nrgs', '.bak'] } }] }); }
-      catch { return cb(''); }                        // closed the picker
-      await keepHandle(h);
-      sendFile(await h.getFile(), cb);
+  // Always the plain file box: Chrome / Edge's keep-the-file picker refuses anything in AppData ("contains system
+  // files"), and that is where the save lives. A save picked again replaces any file kept from before.
+  window.toyboxPickSave = (cb) => pickFile('Import your save',
+    saveText(), '.nrgs,.bak', async (f) => {
+      if (!f) { cb(''); return; }
+      hdb('readwrite', (st) => st.delete('save')).catch(() => {});
+      sendFile(f, cb);
     });
-  } else window.toyboxPickSave = (cb) => pickFile('Import your save',
-    saveText(), '.nrgs,.bak', async (f) => { if (!f) { cb(''); return; } sendFile(f, cb); });
   window.toyboxForgetSave = (cb) => { hdb('readwrite', (st) => st.delete('save')).catch(() => {}); send({ op: 'forget-save' }, cb); };
   // a text file the player picks (Toybox data / notes import); cb('') when nothing was picked
   window.toyboxPickText = (cb) => pickFile('Import your Toybox data', 'Pick a file you exported from the Toybox (.json). It is added to what you have here.',
