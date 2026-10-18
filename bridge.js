@@ -7,6 +7,16 @@
     const r = (e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'r' || e.key === 'R');
     if (r || e.key === 'F5') { e.preventDefault(); e.stopImmediatePropagation(); location.reload(); }
   }, true);
+  // Ctrl+V: Godot pastes what it last heard from the browser, and only hears the new clipboard on the paste
+  // after, so every paste came out one behind (a #code took two tries). Hold the key back from the game, let the
+  // browser paste (that hands Godot the new clipboard), then press Ctrl+V in the app.
+  const typing = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'v' || e.key === 'V') && !typing(e.target)) e.stopImmediatePropagation();
+  }, true);
+  window.addEventListener('paste', (e) => {
+    if (!typing(e.target)) setTimeout(() => { if (window.toyboxOnPaste) window.toyboxOnPaste(); }, 0);
+  });
   const base = new URL('./', document.baseURI).href;
   const get = (p) => fetch(base + p).then((r) => (r.ok ? r.text() : Promise.reject(new Error(p + ' ' + r.status))));
   let worker = null, next = 1;
