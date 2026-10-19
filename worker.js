@@ -8,21 +8,33 @@ import OozModule from './ooz.mjs';
 const BASE = new URL('./', self.location.href).href;
 let py, ooz, run, manifest;
 const seeded = new Set();
+// Answers for the imported save are kept in this browser too (with the files the map read), so opening the site
+// again with the same save shows it straight away: Python is only started when something new is asked.
+const KEEP = new Set(['state', 'prepare', 'stats', 'saveinfo']);
+let saveId = '';                                     // site build + the save's fingerprint; '' = no save
 
 function idb() {
   return new Promise((ok, bad) => {
-    const r = indexedDB.open('woth2-toybox', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('files');
+    const r = indexedDB.open('woth2-toybox', 2);
+    r.onupgradeneeded = () => { for (const n of ['files', 'answers']) if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n); };
     r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error);
   });
 }
-async function idbGet(k) {
+async function idbGet(k, store = 'files') {
   const db = await idb();
-  return new Promise((ok) => { const q = db.transaction('files').objectStore('files').get(k); q.onsuccess = () => ok(q.result); q.onerror = () => ok(null); });
+  return new Promise((ok) => { const q = db.transaction(store).objectStore(store).get(k); q.onsuccess = () => ok(q.result); q.onerror = () => ok(null); });
 }
-async function idbPut(k, v) {
+async function idbPut(k, v, store = 'files') {
   const db = await idb();
-  return new Promise((ok) => { const t = db.transaction('files', 'readwrite'); v === null ? t.objectStore('files').delete(k) : t.objectStore('files').put(v, k); t.oncomplete = () => ok(); t.onerror = () => ok(); });
+  return new Promise((ok) => { const t = db.transaction(store, 'readwrite'); v === null ? t.objectStore(store).delete(k) : t.objectStore(store).put(v, k); t.oncomplete = () => ok(); t.onerror = () => ok(); });
+}
+async function forgetAnswers() {
+  const db = await idb();
+  return new Promise((ok) => { const t = db.transaction('answers', 'readwrite'); t.objectStore('answers').clear(); t.oncomplete = () => ok(); t.onerror = () => ok(); });
+}
+async function fingerprint(u8) {
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', u8));
+  return manifest.version + ':' + Array.from(h.slice(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 async function fetchBytes(rel) {
   const r = await fetch(BASE + rel);
@@ -54,6 +66,15 @@ async function needScipy() {
   await py.loadPackage(['scipy'], { messageCallback: () => {}, errorCallback: () => {} }); scipy = true;
 }
 
+// the small start: the site's map list and the kept save (no Python yet)
+async function start() {
+  manifest = JSON.parse(new TextDecoder().decode(await fetchBytes('mappack/manifest.json')));
+  const kept = await idbGet('save');
+  if (kept) saveId = await fingerprint(kept);
+}
+let booted = null;
+const python = () => booted || (booted = boot());
+
 async function boot() {
   stage('1/4 Downloading the save reader');
   py = await loadPyodide({ indexURL: BASE + 'pyodide/', stdout: () => {}, stderr: () => {} });
@@ -61,7 +82,6 @@ async function boot() {
   await py.loadPackage(['numpy', 'pillow'], { messageCallback: () => {}, errorCallback: () => {} });
   stage('3/4 Opening the Toybox');
   ooz = await OozModule({ locateFile: (f) => BASE + f });
-  manifest = JSON.parse(new TextDecoder().decode(await fetchBytes('mappack/manifest.json')));
   py.unpackArchive((await fetchBytes('core.zip')).buffer, 'zip', { extractDir: '/core' });
   const FS = py.FS;
   FS.mkdirTree('/core/mappack/icons');
@@ -93,7 +113,19 @@ async function boot() {
   run = py.globals.get('toybox_run');
   stage('');
 }
-const ready = boot();
+const ready = start();
+
+// a core command run by Python -> [out, err]
+async function core(argv, envJson) {
+  await python();
+  if (argv[0] === 'prepare' && manifest.maps[argv[1]]) await seedMap(argv[1]);
+  const env = JSON.stringify(Object.assign({ HOME: '/home/pyodide' }, JSON.parse(envJson)));
+  let res = run(JSON.stringify(argv), env).toJs();
+  if (!scipy && /No module named '?scipy/.test(String(res[0]) + String(res[1]))) {   // a map tool after all: get it, run again
+    await needScipy(); stage(''); res = run(JSON.stringify(argv), env).toJs();
+  }
+  return res;
+}
 
 function b64(u8) {
   let s = ''; const C = 0x8000;
@@ -107,26 +139,40 @@ self.onmessage = async ({ data }) => {
     await ready;
     if (op === 'save') {                               // the player's save: kept here and in this browser
       const u8 = new Uint8Array(data.bytes);
-      py.FS.writeFile('/saves/SaveData.nrgs', u8); await idbPut('save', u8);
-      if (data.mtime) py.FS.utime('/saves/SaveData.nrgs', data.mtime, data.mtime);     // file date = when the game saved it
-      await idbPut('save_mtime', data.mtime || 0);
+      await idbPut('save', u8); await idbPut('save_mtime', data.mtime || 0);
+      await forgetAnswers(); saveId = await fingerprint(u8);
+      if (booted) {                                    // Python already up: hand it the new file too
+        await booted; py.FS.writeFile('/saves/SaveData.nrgs', u8);
+        if (data.mtime) py.FS.utime('/saves/SaveData.nrgs', data.mtime, data.mtime);   // file date = when the game saved it
+      }
       self.postMessage({ id, out: JSON.stringify({ ok: true, path: '/saves/SaveData.nrgs' }) }); return;
     }
     if (op === 'forget-save') {
-      try { py.FS.unlink('/saves/SaveData.nrgs'); } catch { /* none */ }
-      await idbPut('save', null); await idbPut('save_mtime', 0); self.postMessage({ id, out: '{"ok": true}' }); return;
+      if (booted) { await booted; try { py.FS.unlink('/saves/SaveData.nrgs'); } catch { /* none */ } }
+      await idbPut('save', null); await idbPut('save_mtime', 0); await forgetAnswers(); saveId = ''; self.postMessage({ id, out: '{"ok": true}' }); return;
     }
     if (op === 'read') {                               // a file the core wrote (model.json, fow.png): base64
-      let out = '';
-      try { out = b64(py.FS.readFile(data.path)); } catch { out = ''; }
+      const key = saveId && saveId + ' file ' + data.path;
+      let out = key ? await idbGet(key, 'answers') : null;
+      if (out == null) {
+        const file = () => { try { return b64(py.FS.readFile(data.path)); } catch { return ''; } };
+        out = booted ? (await booted, file()) : '';
+        const redo = !out && key && await idbGet(saveId + ' made ' + data.path.replace(/\/[^/]*$/, ''), 'answers');
+        if (redo) { await core(redo.argv, redo.env); out = file(); }   // its run was a kept answer: make the file again
+        if (key && out) await idbPut(key, out, 'answers');
+      }
       self.postMessage({ id, out }); return;
     }
-    const argv = JSON.parse(data.argv);
-    if (argv[0] === 'prepare' && manifest.maps[argv[1]]) await seedMap(argv[1]);
-    const env = Object.assign({ HOME: '/home/pyodide' }, JSON.parse(data.env || '{}'));
-    let res = run(JSON.stringify(argv), JSON.stringify(env)).toJs();
-    if (!scipy && /No module named '?scipy/.test(String(res[0]) + String(res[1]))) {   // a map tool after all: get it, run again
-      await needScipy(); stage(''); res = run(JSON.stringify(argv), JSON.stringify(env)).toJs();
+    const argv = JSON.parse(data.argv), env = data.env || '{}';
+    const key = saveId && argv.includes('--save') && KEEP.has(argv[0]) && saveId + ' run ' + data.argv + ' ' + env;
+    const kept = key ? await idbGet(key, 'answers') : null;
+    if (kept) { self.postMessage({ id, out: kept[0], err: kept[1] }); return; }
+    const res = await core(argv, env);
+    if (key && !/"error"/.test(String(res[0]).slice(0, 200))) {
+      await idbPut(key, [res[0], res[1]], 'answers');
+      if (argv[0] === 'prepare') {                     // which run makes this map's files, for a read that was not kept
+        try { const dir = JSON.parse(String(res[0]).trim().split('\n').pop()).dir; if (dir) await idbPut(saveId + ' made ' + dir, { argv, env }, 'answers'); } catch { /* not json */ }
+      }
     }
     self.postMessage({ id, out: res[0], err: res[1] });
   } catch (e) {
