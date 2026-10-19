@@ -43,9 +43,23 @@ async function seedMap(m) {
   seeded.add(m);
 }
 
+// where the start is at, for the page's loading bar ("2/4 what"); '' when ready
+const stage = (t) => self.postMessage({ stage: t });
+
+// scipy (and its maths library, 20 MB) is only needed to build maps from game files, which the website never does:
+// it is fetched the first time a command asks for it, not at every start.
+let scipy = false;
+async function needScipy() {
+  if (scipy) return; stage('4/4 Getting the map tools');
+  await py.loadPackage(['scipy'], { messageCallback: () => {}, errorCallback: () => {} }); scipy = true;
+}
+
 async function boot() {
+  stage('1/4 Downloading the save reader');
   py = await loadPyodide({ indexURL: BASE + 'pyodide/', stdout: () => {}, stderr: () => {} });
-  await py.loadPackage(['numpy', 'scipy', 'pillow'], { messageCallback: () => {}, errorCallback: () => {} });
+  stage('2/4 Downloading its tools');
+  await py.loadPackage(['numpy', 'pillow'], { messageCallback: () => {}, errorCallback: () => {} });
+  stage('3/4 Opening the Toybox');
   ooz = await OozModule({ locateFile: (f) => BASE + f });
   manifest = JSON.parse(new TextDecoder().decode(await fetchBytes('mappack/manifest.json')));
   py.unpackArchive((await fetchBytes('core.zip')).buffer, 'zip', { extractDir: '/core' });
@@ -77,6 +91,7 @@ async function boot() {
   });
   py.runPython(await (await fetch(BASE + 'runner.py')).text());
   run = py.globals.get('toybox_run');
+  stage('');
 }
 const ready = boot();
 
@@ -109,7 +124,10 @@ self.onmessage = async ({ data }) => {
     const argv = JSON.parse(data.argv);
     if (argv[0] === 'prepare' && manifest.maps[argv[1]]) await seedMap(argv[1]);
     const env = Object.assign({ HOME: '/home/pyodide' }, JSON.parse(data.env || '{}'));
-    const res = run(JSON.stringify(argv), JSON.stringify(env)).toJs();
+    let res = run(JSON.stringify(argv), JSON.stringify(env)).toJs();
+    if (!scipy && /No module named '?scipy/.test(String(res[0]) + String(res[1]))) {   // a map tool after all: get it, run again
+      await needScipy(); stage(''); res = run(JSON.stringify(argv), JSON.stringify(env)).toJs();
+    }
     self.postMessage({ id, out: res[0], err: res[1] });
   } catch (e) {
     self.postMessage({ id, out: JSON.stringify({ error: String(e && e.message || e) }) + '\n' });

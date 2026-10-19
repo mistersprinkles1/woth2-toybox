@@ -24,7 +24,10 @@
   function core() {
     if (!worker) {
       worker = new Worker(new URL('worker.js', document.baseURI), { type: 'module' });
-      worker.onmessage = ({ data }) => { const cb = waiting.get(data.id); if (cb) { waiting.delete(data.id); cb(data.out || ''); } };
+      worker.onmessage = ({ data }) => {
+        if ('stage' in data) { window.toyboxStage = data.stage; return; }   // the core starting up: the app shows it
+        const cb = waiting.get(data.id); if (cb) { waiting.delete(data.id); cb(data.out || ''); }
+      };
     }
     return worker;
   }
