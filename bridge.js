@@ -54,13 +54,14 @@
   window.toyboxRead = (path, cb) => send({ op: 'read', path }, cb);
   // Browsers only open a file picker straight from a real click on the page, and the app's own buttons are drawn
   // inside the game engine - so a small page dialog with a real button asks for the file.
-  function pickFile(title, text, accept, done) {
+  function pickFile(title, text, accept, done, copy) {      // copy: [label, text] puts a button that copies text
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,sans-serif';
     wrap.innerHTML = '<div style="background:#14110d;border:1px solid #6b5a3c;border-radius:12px;padding:22px 24px;max-width:440px;width:calc(100% - 48px);color:#efe6d2;box-shadow:0 10px 40px #000">' +
       '<div style="font-weight:700;font-size:18px;margin-bottom:8px">' + title + '</div>' +
       '<div style="font-size:14px;line-height:1.45;color:#b9ad95;margin-bottom:18px">' + text + '</div>' +
-      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">' +
+      (copy ? '<button data-k="copy" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;margin-right:auto">' + copy[0] + '</button>' : '') +
       '<button data-k="cancel" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer">Cancel</button>' +
       '<button data-k="pick" style="background:#dcc79a;color:#16120c;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer">Choose file…</button></div></div>';
     const input = document.createElement('input');
@@ -69,6 +70,10 @@
     const close = () => wrap.remove();
     wrap.querySelector('[data-k=cancel]').onclick = () => { close(); done(null); };
     wrap.querySelector('[data-k=pick]').onclick = () => input.click();          // a real click: the browser allows the picker
+    const cp = wrap.querySelector('[data-k=copy]');
+    if (cp) cp.onclick = async () => {
+      try { await navigator.clipboard.writeText(copy[1]); cp.textContent = 'Copied'; } catch { cp.textContent = copy[1]; }
+    };
     input.onchange = () => { const f = input.files && input.files[0]; close(); done(f || null); };
   }
   // Chrome / Edge can keep the picked save file itself (a file handle, kept in this browser), so REFRESH reads it
@@ -124,10 +129,14 @@
     });
   };
   // the player picks their save; cb('{"ok":true,"path":...}' | '' when nothing was picked)
-  const saveText = () => 'Pick <b>SaveData.nrgs</b>. On Windows it is in %LOCALAPPDATA%\\WOTH2\\Saved\\SaveGames\\Account_…<br>' +
+  // (a browser can never open a file on the PC by itself: the player picks it. The desktop app finds it on its own.)
+  const SAVE_DIR = '%LOCALAPPDATA%\\WOTH2\\Saved\\SaveGames';
+  const saveText = () => 'Pick <b>SaveData.nrgs</b>. On Windows it is in ' + SAVE_DIR + '\\Account_…<br>' +
+    'Click COPY FOLDER, then paste it into the file box\'s address bar and open the Account folder.<br>' +
     'It stays in this browser. After more hunting, import it again to see the new hunts.' +
     ' The first time, reading it downloads about 36 MB.' +
-    (matchMedia('(pointer: coarse)').matches ? '<br><br><b>On a phone or tablet this can run out of memory and close the page.</b> A PC browser works best.' : '');
+    (matchMedia('(pointer: coarse)').matches ? '<br><br><b>On a phone or tablet this can run out of memory and close the page.</b> A PC browser works best.' : '') +
+    '<br><br>Browsers can\'t open files on your PC without you picking them. Want it to load by itself? The desktop Toybox app finds your save and reads it again every time the game saves.';
   // Always the plain file box: Chrome / Edge's keep-the-file picker refuses anything in AppData ("contains system
   // files"), and that is where the save lives. A save picked again replaces any file kept from before.
   window.toyboxPickSave = (cb) => pickFile('Import your save',
@@ -135,7 +144,7 @@
       if (!f) { cb(''); return; }
       hdb('readwrite', (st) => st.delete('save')).catch(() => {});
       sendFile(f, cb);
-    });
+    }, ['COPY FOLDER', SAVE_DIR]);
   window.toyboxForgetSave = (cb) => { hdb('readwrite', (st) => st.delete('save')).catch(() => {}); send({ op: 'forget-save' }, cb); };
   // a text file the player picks (Toybox data / notes import); cb('') when nothing was picked
   window.toyboxPickText = (cb) => pickFile('Import your Toybox data', 'Pick a file you exported from the Toybox (.json). It is added to what you have here.',
