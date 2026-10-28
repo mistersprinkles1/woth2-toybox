@@ -40,12 +40,15 @@
   window.toyboxRun = (argvJson, envJson, cb) => {
     const argv = JSON.parse(argvJson);
     const done = (p) => p.then((t) => cb(t.trim())).catch((e) => cb(JSON.stringify({ error: String(e.message || e) })));
-    if (argv[0] === 'encyclopedia') return done(get('data/encyclopedia.json'));   // the same for everyone, save or not
+    const lang = (JSON.parse(envJson || '{}').WOTH2_LANG || '').replace(/[^A-Za-z_]/g, '');
+    // the made-once files come in each language the app speaks (data/<name>_<lang>.json); English when there is none
+    const data = (name) => lang ? get('data/' + name + '_' + lang + '.json').catch(() => get('data/' + name + '.json')) : get('data/' + name + '.json');
+    if (argv[0] === 'encyclopedia') return done(data('encyclopedia'));   // the same for everyone, save or not
     if (argv.includes('--save')) return send({ op: 'run', argv: argvJson, env: envJson }, cb);   // the player's save: Python
     switch (argv[0]) {
-      case 'state': return done(get('data/state.json'));
-      case 'encyclopedia': return done(get('data/encyclopedia.json'));
-      case 'stats': return done(get('data/stats.json'));            // no save: the challenge / mission list to tick off
+      case 'state': return done(data('state'));
+      case 'encyclopedia': return done(data('encyclopedia'));
+      case 'stats': return done(data('stats'));            // no save: the challenge / mission list to tick off
       case 'prepare': return cb(JSON.stringify({ dir: '/mappack/' + argv[1], icons: '/mappack/icons', missing: [], warnings: [] }));
       default: return cb(JSON.stringify({ error: 'Not in the web app.' }));
     }
@@ -54,6 +57,15 @@
   window.toyboxRead = (path, cb) => send({ op: 'read', path }, cb);
   // Browsers only open a file picker straight from a real click on the page, and the app's own buttons are drawn
   // inside the game engine - so a small page dialog with a real button asks for the file.
+  // the page's own dialogs in the app's language (the app sets window.toyboxLang: Settings > Language)
+  const PT = {
+    'Cancel': 'Cancelar', 'Choose file…': 'Escolher arquivo…', 'Copied': 'Copiado', 'COPY FOLDER': 'COPIAR PASTA',
+    'Read your save again': 'Ler o save de novo', 'Read it': 'Ler',
+    'The browser asks once per visit before the Toybox may read <b>SaveData.nrgs</b> again.': 'O navegador pergunta uma vez por visita antes de o Toybox poder ler o <b>SaveData.nrgs</b> de novo.',
+    'Import your save': 'Importar seu save', 'Import your Toybox data': 'Importar seus dados do Toybox',
+    'Pick a file you exported from the Toybox (.json). It is added to what you have here.': 'Escolha um arquivo que você exportou do Toybox (.json). Ele é somado ao que você já tem aqui.',
+  };
+  const L = (en) => (window.toyboxLang === 'pt_BR' && PT[en]) || en;
   function pickFile(title, text, accept, done, copy) {      // copy: [label, text] puts a button that copies text
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,sans-serif';
@@ -62,8 +74,8 @@
       '<div style="font-size:14px;line-height:1.45;color:#b9ad95;margin-bottom:18px">' + text + '</div>' +
       '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">' +
       (copy ? '<button data-k="copy" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;margin-right:auto">' + copy[0] + '</button>' : '') +
-      '<button data-k="cancel" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer">Cancel</button>' +
-      '<button data-k="pick" style="background:#dcc79a;color:#16120c;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer">Choose file…</button></div></div>';
+      '<button data-k="cancel" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer">' + L('Cancel') + '</button>' +
+      '<button data-k="pick" style="background:#dcc79a;color:#16120c;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer">' + L('Choose file…') + '</button></div></div>';
     const input = document.createElement('input');
     input.type = 'file'; input.accept = accept; input.style.display = 'none';
     wrap.appendChild(input); document.body.appendChild(wrap);
@@ -72,7 +84,7 @@
     wrap.querySelector('[data-k=pick]').onclick = () => input.click();          // a real click: the browser allows the picker
     const cp = wrap.querySelector('[data-k=copy]');
     if (cp) cp.onclick = async () => {
-      try { await navigator.clipboard.writeText(copy[1]); cp.textContent = 'Copied'; } catch { cp.textContent = copy[1]; }
+      try { await navigator.clipboard.writeText(copy[1]); cp.textContent = L('Copied'); } catch { cp.textContent = copy[1]; }
     };
     input.onchange = () => { const f = input.files && input.files[0]; close(); done(f || null); };
   }
@@ -103,7 +115,7 @@
       '<div style="font-weight:700;font-size:18px;margin-bottom:8px">' + title + '</div>' +
       '<div style="font-size:14px;line-height:1.45;color:#b9ad95;margin-bottom:18px">' + text + '</div>' +
       '<div style="display:flex;gap:10px;justify-content:flex-end">' +
-      '<button data-k="cancel" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer">Cancel</button>' +
+      '<button data-k="cancel" style="background:#2a241b;color:#efe6d2;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer">' + L('Cancel') + '</button>' +
       '<button data-k="go" style="background:#dcc79a;color:#16120c;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer">' + button + '</button></div></div>';
     document.body.appendChild(wrap);
     wrap.querySelector('[data-k=cancel]').onclick = () => { wrap.remove(); go(false); };
@@ -122,7 +134,7 @@
     let p = 'prompt';
     try { p = await h.queryPermission({ mode: 'read' }); } catch { /* old browser */ }
     if (p === 'granted') return read();
-    askOnce('Read your save again', 'The browser asks once per visit before the Toybox may read <b>SaveData.nrgs</b> again.', 'Read it', async (yes) => {
+    askOnce(L('Read your save again'), L('The browser asks once per visit before the Toybox may read <b>SaveData.nrgs</b> again.'), L('Read it'), async (yes) => {
       if (!yes) return no('denied');
       try { p = await h.requestPermission({ mode: 'read' }); } catch { p = 'denied'; }
       if (p === 'granted') read(); else no('denied');
@@ -131,23 +143,31 @@
   // the player picks their save; cb('{"ok":true,"path":...}' | '' when nothing was picked)
   // (a browser can never open a file on the PC by itself: the player picks it. The desktop app finds it on its own.)
   const SAVE_DIR = '%LOCALAPPDATA%\\WOTH2\\Saved\\SaveGames';
-  const saveText = () => 'Pick <b>SaveData.nrgs</b>. On Windows it is in ' + SAVE_DIR + '\\Account_…<br>' +
+  const saveText = () => window.toyboxLang === 'pt_BR' ? saveTextPT() : 'Pick <b>SaveData.nrgs</b>. On Windows it is in ' + SAVE_DIR + '\\Account_…<br>' +
     'Click COPY FOLDER, then paste it into the file box\'s address bar and open the Account folder.<br>' +
     'It stays in this browser. After more hunting, import it again to see the new hunts.' +
+    '<br><br><b>By importing your save, you agree to share your kill data</b> (species, age, fitness, weight, trophy measurements) and a copy of your save with your hunter name taken out, to help make trophy scores better. No name, account or Steam ID. Turn it off in Settings any time.<br>' +
     ' The first time, reading it downloads about 36 MB.' +
     (matchMedia('(pointer: coarse)').matches ? '<br><br><b>On a phone or tablet this can run out of memory and close the page.</b> A PC browser works best.' : '') +
     '<br><br>Browsers can\'t open files on your PC without you picking them. Want it to load by itself? The desktop Toybox app finds your save and reads it again every time the game saves.';
+  const saveTextPT = () => 'Escolha o <b>SaveData.nrgs</b>. No Windows ele fica em ' + SAVE_DIR + '\\Account_…<br>' +
+    'Clique em COPIAR PASTA, cole na barra de endereço da janela de arquivos e abra a pasta Account.<br>' +
+    'Ele fica neste navegador. Depois de caçar mais, importe de novo para ver as caçadas novas.' +
+    '<br><br><b>Ao importar seu save, você concorda em compartilhar os dados dos seus abates</b> (espécie, idade, condicionamento, peso, medidas do troféu) e uma cópia do seu save sem o seu nome de caçador, para ajudar a melhorar a pontuação dos troféus. Nenhum nome, conta ou Steam ID. Desligue em Ajustes quando quiser.<br>' +
+    ' Na primeira vez, a leitura baixa uns 36 MB.' +
+    (matchMedia('(pointer: coarse)').matches ? '<br><br><b>No celular ou tablet a memória pode acabar e a página fechar.</b> Um navegador no PC funciona melhor.' : '') +
+    '<br><br>Navegadores não abrem arquivos do seu PC sem você escolher. Quer que carregue sozinho? O app Toybox para PC acha o seu save e lê de novo toda vez que o jogo salva.';
   // Always the plain file box: Chrome / Edge's keep-the-file picker refuses anything in AppData ("contains system
   // files"), and that is where the save lives. A save picked again replaces any file kept from before.
-  window.toyboxPickSave = (cb) => pickFile('Import your save',
+  window.toyboxPickSave = (cb) => pickFile(L('Import your save'),
     saveText(), '.nrgs,.bak', async (f) => {
       if (!f) { cb(''); return; }
       hdb('readwrite', (st) => st.delete('save')).catch(() => {});
       sendFile(f, cb);
-    }, ['COPY FOLDER', SAVE_DIR]);
+    }, [L('COPY FOLDER'), SAVE_DIR]);
   window.toyboxForgetSave = (cb) => { hdb('readwrite', (st) => st.delete('save')).catch(() => {}); send({ op: 'forget-save' }, cb); };
   // a text file the player picks (Toybox data / notes import); cb('') when nothing was picked
-  window.toyboxPickText = (cb) => pickFile('Import your Toybox data', 'Pick a file you exported from the Toybox (.json). It is added to what you have here.',
+  window.toyboxPickText = (cb) => pickFile(L('Import your Toybox data'), L('Pick a file you exported from the Toybox (.json). It is added to what you have here.'),
     '.json,application/json', async (f) => cb(f ? await f.text() : ''));
   window.toyboxBase = () => document.baseURI;
   // tests: hand the core a save directly (ArrayBuffer)
