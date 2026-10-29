@@ -37,7 +37,7 @@ async function fingerprint(u8) {
   return manifest.version + ':' + Array.from(h.slice(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 async function fetchBytes(rel) {
-  const r = await fetch(BASE + rel + (rel.includes('?') ? '&' : '?') + 'v=1793271933');
+  const r = await fetch(BASE + rel + (rel.includes('?') ? '&' : '?') + 'v=1793289890');
   if (!r.ok) throw new Error(rel + ': ' + r.status);
   return new Uint8Array(await r.arrayBuffer());
 }
@@ -50,7 +50,7 @@ async function seedMap(m) {
   FS.mkdirTree(dir);
   const mm = manifest.maps[m];
   await Promise.all(mm.small.filter((n) => n !== 'model.json').map(async (n) => FS.writeFile(dir + '/' + n, await fetchBytes('mappack/' + m + '/' + n))));
-  for (const n of mm.images) if (n !== 'satellite.jpg') FS.writeFile(dir + '/' + n, new Uint8Array(0));
+  for (const n of mm.images) if (n !== 'satellite.jpg') FS.writeFile(dir + '/' + n.replace(/\.webp$/, '.png'), new Uint8Array(0));   // the core looks for .png
   FS.writeFile(dir + '/satellite.png', new Uint8Array(0));
   seeded.add(m);
 }
@@ -109,7 +109,7 @@ async function boot() {
     reg_query() { return null; },
     tasklist() { return ''; },
   });
-  py.runPython(await (await fetch(BASE + 'runner.py?v=1793271933')).text());
+  py.runPython(await (await fetch(BASE + 'runner.py?v=1793289890')).text());
   run = py.globals.get('toybox_run');
   stage('');
 }
