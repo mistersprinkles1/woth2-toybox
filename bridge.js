@@ -17,13 +17,21 @@
   window.addEventListener('paste', (e) => {
     if (!typing(e.target)) setTimeout(() => { if (window.toyboxOnPaste) window.toyboxOnPaste(); }, 0);
   });
+  // The map's zoom: Godot's web build only hears that the wheel turned, not by how much, so a trackpad (dozens of
+  // tiny steps per swipe) zoomed as hard as a mouse wheel clicked dozens of times. Keep how far it really turned
+  // (a mouse wheel notch is about 100) for the app to ask: window.toyboxWheelTake() -> distance since last asked.
+  let wheelDy = 0, wheelAt = 0;
+  window.addEventListener('wheel', (e) => {
+    const now = performance.now(); if (now - wheelAt > 150) wheelDy = 0; wheelAt = now;     // a new swipe starts from 0
+    wheelDy += Math.abs(e.deltaY) * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 800 : 1); }, { capture: true, passive: true });
+  window.toyboxWheelTake = () => { const v = wheelDy; wheelDy = 0; return v; };
   const base = new URL('./', document.baseURI).href;
   const get = (p) => fetch(base + p).then((r) => (r.ok ? r.text() : Promise.reject(new Error(p + ' ' + r.status))));
   let worker = null, next = 1;
   const waiting = new Map();
   function core() {
     if (!worker) {
-      worker = new Worker(new URL('worker.js?v=1793271933', document.baseURI), { type: 'module' });
+      worker = new Worker(new URL('worker.js?v=1793288818', document.baseURI), { type: 'module' });
       worker.onmessage = ({ data }) => {
         if ('stage' in data) { window.toyboxStage = data.stage; return; }   // the core starting up: the app shows it
         const cb = waiting.get(data.id); if (cb) { waiting.delete(data.id); cb(data.out || ''); }
@@ -172,4 +180,44 @@
   window.toyboxBase = () => document.baseURI;
   // tests: hand the core a save directly (ArrayBuffer)
   window.toyboxPutSave = (buf, cb) => send({ op: 'save', bytes: buf }, cb || (() => {}), [buf]);
+  // The engine (index.wasm, 44 MB) and the app (index.pck) are kept in this browser by what is in them: the site
+  // only lets a browser keep a file 10 minutes and every release looks new to it, so each visit after a release
+  // downloaded both again. Now a visit only downloads what really changed (the engine almost never does).
+  // Both start downloading here, before the page has even loaded the engine's loader. build_web.sh fills in KEEP:
+  // {address the engine asks for: fingerprint}.
+  const KEEP = { 'index.wasm': 'e4a43dbae28662b2', 'index.pck?v=4bbd8943078a8a3f': '4bbd8943078a8a3f' };
+  if (Object.keys(KEEP).length && typeof caches !== 'undefined') {
+    const real = window.fetch.bind(window);
+    const keyOf = (rel) => base + rel + (rel.includes('?') ? '&' : '?') + 'keep=' + KEEP[rel];
+    const load = async (rel) => {
+      let c = null;
+      try { c = await caches.open('toybox-engine'); const hit = await c.match(keyOf(rel)); if (hit) return hit; } catch { c = null; }
+      const r = await real(base + rel, { credentials: 'same-origin' });
+      if (!c || !r.ok || !r.body) return r;
+      // the engine reads the download as it comes in (it starts compiling before the end); the pieces are kept and
+      // stored once it is all there. (Not r.clone(): Chrome often never finished storing a clone of the 44 MB file.)
+      const parts = [], rd = r.body.getReader(), type = r.headers.get('Content-Type') || '';
+      const body = new ReadableStream({
+        async pull(ctl) {
+          const { done, value } = await rd.read();
+          if (!done) { parts.push(value); ctl.enqueue(value); return; }
+          ctl.close();
+          const blob = new Blob(parts); parts.length = 0;
+          const want = new Set(Object.keys(KEEP).map(keyOf));      // kept for next time; older versions are let go
+          c.put(keyOf(rel), new Response(blob, { headers: { 'Content-Type': type } })).then(() => c.keys())
+            .then((ks) => Promise.all(ks.filter((k) => !want.has(k.url)).map((k) => c.delete(k)))).catch(() => {});
+        },
+        cancel(why) { return rd.cancel(why); },
+      });
+      return new Response(body, { status: r.status, statusText: r.statusText, headers: { 'Content-Type': type } });
+    };
+    const early = {};
+    for (const rel of Object.keys(KEEP)) { early[rel] = load(rel); early[rel].catch(() => {}); }
+    window.fetch = function (input, init) {
+      const rel = typeof input === 'string' ? (input.startsWith(base) ? input.slice(base.length) : input) : '';
+      if (!(rel in KEEP)) return real(input, init);
+      const p = early[rel] || load(rel); delete early[rel];     // the early download once, a fresh one on a retry
+      return p;
+    };
+  }
 })();
