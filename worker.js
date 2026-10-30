@@ -37,7 +37,7 @@ async function fingerprint(u8) {
   return manifest.version + ':' + Array.from(h.slice(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 async function fetchBytes(rel) {
-  const r = await fetch(BASE + rel + (rel.includes('?') ? '&' : '?') + 'v=1793308435');
+  const r = await fetch(BASE + rel + (rel.includes('?') ? '&' : '?') + 'v=1793321470');
   if (!r.ok) throw new Error(rel + ': ' + r.status);
   return new Uint8Array(await r.arrayBuffer());
 }
@@ -109,7 +109,7 @@ async function boot() {
     reg_query() { return null; },
     tasklist() { return ''; },
   });
-  py.runPython(await (await fetch(BASE + 'runner.py?v=1793308435')).text());
+  py.runPython(await (await fetch(BASE + 'runner.py?v=1793321470')).text());
   run = py.globals.get('toybox_run');
   stage('');
 }
