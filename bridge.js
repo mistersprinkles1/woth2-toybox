@@ -31,7 +31,7 @@
   const waiting = new Map();
   function core() {
     if (!worker) {
-      worker = new Worker(new URL('worker.js?v=1794601004', document.baseURI), { type: 'module' });
+      worker = new Worker(new URL('worker.js?v=1794602015', document.baseURI), { type: 'module' });
       worker.onmessage = ({ data }) => {
         if ('stage' in data) { window.toyboxStage = data.stage; return; }   // the core starting up: the app shows it
         const cb = waiting.get(data.id); if (cb) { waiting.delete(data.id); cb(data.out || ''); }
@@ -173,7 +173,7 @@
   // downloaded both again. Now a visit only downloads what really changed (the engine almost never does).
   // Both start downloading here, before the page has even loaded the engine's loader. build_web.sh fills in KEEP:
   // {address the engine asks for: fingerprint}.
-  const KEEP = { 'index.wasm': 'e4a43dbae28662b2', 'index.pck?v=0d426393ebf5d877': '0d426393ebf5d877' };
+  const KEEP = { 'index.wasm': 'e4a43dbae28662b2', 'index.pck?v=089ba358423d82c6': '089ba358423d82c6' };
   if (Object.keys(KEEP).length && typeof caches !== 'undefined') {
     const real = window.fetch.bind(window);
     const keyOf = (rel) => base + rel + (rel.includes('?') ? '&' : '?') + 'keep=' + KEEP[rel];
