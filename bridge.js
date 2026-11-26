@@ -199,7 +199,7 @@
   // downloaded both again. Now a visit only downloads what really changed (the engine almost never does).
   // Both start downloading here, before the page has even loaded the engine's loader. build_web.sh fills in KEEP:
   // {address the engine asks for: fingerprint}.
-  const KEEP = { 'index.wasm': 'e4a43dbae28662b2', 'index.pck?v=46b8445669d1e992': '46b8445669d1e992' };
+  const KEEP = { 'index.wasm': 'e4a43dbae28662b2', 'index.pck?v=46b8445669d1e993': '46b8445669d1e993' };
   if (Object.keys(KEEP).length && typeof caches !== 'undefined') {
     const real = window.fetch.bind(window);
     const keyOf = (rel) => base + rel + (rel.includes('?') ? '&' : '?') + 'keep=' + KEEP[rel];
